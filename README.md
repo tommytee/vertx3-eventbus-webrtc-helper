@@ -5,7 +5,7 @@ vertx3-eventbus-webrtc-helper
 
 needed for: vertx3-eventbus-client-webrtc
 
-vertx3-eventbus-webrtc-helper is needed on the server side (included in this dev repo)
+Vert.x 3.3.3 javaScript
 
     var webRTCHelper = require( 'vertx3-eventbus-webrtc-helper' );
 
