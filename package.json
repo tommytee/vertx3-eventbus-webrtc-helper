@@ -1,0 +1,12 @@
+{
+  "name": "vertx3-eventbus-webrtc-helper",
+  "version": "0.0.1",
+  "authors": "",
+  "description": "webrtc helper for vertx event bus bridge for 3.3.3",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "tommytee/vertx3-eventbus-webrtc-helper.git"
+  },
+  "license": "Apache-2.0"
+}
