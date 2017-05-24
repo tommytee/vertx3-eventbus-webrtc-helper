@@ -1,11 +1,11 @@
 /* global module */
 
-(function(){
-  
+(function() {
+
   var registeredAddress = {};
   var clientsByPeerId = {};
   var registeredStatusAddress = {};
-  var eb;
+  var eb, logger = Java.type( "io.vertx.core.logging.LoggerFactory" ).getLogger( 'vertx3-eventbus-webrtc-helper' );
 
   module.exports.init = function ( ebus ) {
 
@@ -17,12 +17,9 @@
 
       if ( msg.sendWithReply ) {
 
-        //console.log('-=- helper -=- client outgoing send with reply started');
         sendingWithReply( message );
 
       } else if ( msg.register ) {
-
-        //console.log('-=- helper -=- =- reg listener at address ' + msg.address + ' for client ' + msg.peerId )
 
         if ( registeredAddress[ msg.address ] ) {
 
@@ -37,99 +34,85 @@
 
           registeredAddress[ msg.address ].peerClients[ msg.peerId ] = true;
 
-          /**
-           * <- * ->
-           */
-          registeredAddress[ msg.address ].consumer.handler(
-            function ( msg4client ) {
+          registeredAddress[ msg.address ].consumer.handler( function ( msg4client ) {
 
-              var body = msg4client.body();
-              var address = msg4client.address();
-              var replyAddress = msg4client.replyAddress();
+            var body = msg4client.body();
+            var address = msg4client.address();
+            var replyAddress = msg4client.replyAddress();
 
-              var fromPeerId = msg4client.headers().get( "peerId" );
-              var peerString = msg4client.headers().get( "peers" );
+            var fromPeerId = msg4client.headers().get( "peerId" );
+            var peerString = msg4client.headers().get( "peers" );
 
-              var clients = registeredAddress[ address ].peerClients;
+            var clients = registeredAddress[ address ].peerClients;
 
-              if ( replyAddress ) {
+            if ( replyAddress ) {
 
-                replyDealer( msg4client );
+              replyDealer( msg4client );
 
-              } else {
+            } else {
 
-                if ( fromPeerId ) {
+              if ( fromPeerId ) {
 
-                  if ( peerString ) {
+                if ( peerString ) {
 
-                    //console.log('-=- helper -=- peerString from header: ' + peerString );
+                  var thePeers = getPeerIds( peerString );
 
-                    var thePeers = getPeerIds( peerString );
+                  Object.keys( clients ).forEach( function ( peerId ) {
 
-                    Object.keys( clients ).forEach( function ( peerId ) {
+                    if ( thePeers[ peerId ] ) {
 
-                      if ( thePeers[ peerId ] ) {
+                      logger.info( 'not forwarding to ' + peerId )
 
-                        console.log('-=- helper -=- not forwarding to ' + peerId )
-
-                      } else {
-
-                        forward( peerId, fromPeerId, address, body );
-
-                      }
-
-                    } );
-
-                  } else {
-
-                    Object.keys( clients ).forEach( function ( peerId ) {
+                    } else {
 
                       forward( peerId, fromPeerId, address, body );
 
-                    } );
+                    }
 
-                  }
+                  } );
 
                 } else {
 
                   Object.keys( clients ).forEach( function ( peerId ) {
 
-                    //console.log('-=- helper -=- forwarding to ' + peerId )
-
-                    eb.send( 'webrtc.' + peerId, {
-                      address: address,
-                      body: body
-                    }, {
-                      headers: {}
-                    } );
+                    forward( peerId, fromPeerId, address, body );
 
                   } );
 
                 }
-              }
 
-            } );
+              } else {
+
+                Object.keys( clients ).forEach( function ( peerId ) {
+                  
+                  eb.send( 'webrtc.' + peerId, { address: address, body: body }, { headers: {} } );
+
+                } );
+
+              }
+            }
+
+          } );
 
         }
 
       } else if ( msg.unregister ) {
 
-        console.log('-=- helper -=- UNREGISTER' );
+        logger.info( 'unregister peer ' + msg.peerId + ' from address ' + msg.address );
 
         if ( registeredAddress[ msg.address ] ) {
-          
+
           unregPeerFromAddress( msg.address, msg.peerId );
-          
+
         } else {
 
-          console.log(
-            'Error unregister attempt for non-existing address ' +
-            msg.address );
+          logger.error( 'Error unregister attempt for non-existing address ' + msg.address );
+          
         }
 
       } else if ( msg.registerStatus ) {
 
-        //console.log('-=- helper -=- -=-=-=-=-=--=- register Status' );
+        logger.info('register status for address ' + msg.address );
 
         if ( ! registeredStatusAddress[ msg.address ] ) {
 
@@ -141,15 +124,13 @@
 
       } else if ( msg.unregisterStatus ) {
 
-        //console.log('-=- helper -=- -= unregister Status =-=--=-' );
+        if ( registeredStatusAddress[ msg.address ] ) {
 
-        if ( ! registeredStatusAddress[ msg.address ] ) {
+          unregPeerFromStatusAddress( msg.address, msg.peerId )
 
-          registeredStatusAddress[ msg.address ] = {};
+          logger.info('unregister status for address ' + msg.address + ', peer: ' + msg.peerId );
 
         }
-
-        registeredStatusAddress[ msg.address ][ msg.peerId ] = true;
 
       }
 
@@ -157,11 +138,11 @@
 
   }
 
-  module.exports.bridgeEvent = function( be ) {
+  module.exports.bridgeEvent = function ( be ) {
 
     var peerId, msg, type = be.type();
 
-    //console.log('--{-> '+ type +' -}> ' + JSON.stringify(be.getRawMessage()) );
+    //logger.info('--{-> '+ type +' -}> ' + JSON.stringify(be.getRawMessage()) );
 
     if ( type === 'UNREGISTER' ) {
 
@@ -171,7 +152,7 @@
 
         peerId = msg.address.substr( 7 )
 
-        //console.log('-=- helper -=- Peer left: ' + peerId );
+        logger.info('Peer left: ' + peerId );
 
         delete clientsByPeerId[ peerId ];
 
@@ -182,7 +163,20 @@
 
             unregPeerFromAddress( address, peerId );
 
-            console.log('-=- helper -=- unregistered peer ' + peerId + ' from ' + address);
+            logger.info( 'unregistered peer ' + peerId + ' from ' + address );
+          }
+
+        } );
+
+        // look through registered status addresses for this peer id
+        Object.keys( registeredStatusAddress ).forEach( function ( address ) {
+
+          if ( registeredStatusAddress[ address ][ peerId ] ) {
+
+            unregPeerFromStatusAddress( address, peerId );
+
+            logger.info( 'status unregistered peer ' + peerId + ' from ' + address );
+
           }
 
         } );
@@ -194,8 +188,6 @@
       msg = be.getRawMessage();
 
       if ( msg.address.substr( 0, 7 ) === 'webrtc.' ) {
-
-        //console.log('-=- helper -=- Peer joined: ' + msg.address.substr( 7 ) );
 
         clientsByPeerId[ msg.peerId ] = true;
 
@@ -209,14 +201,12 @@
 
   function forward ( peerId, fromPeerId, address, body ) {
 
-    //console.log('-=- helper -=- forwarding to ' + peerId )
-
     var envelope = {
       address: address,
       body: body
     };
 
-    eb.send( 'webrtc.' + peerId, envelope,{headers:{"peerId":fromPeerId }});
+    eb.send( 'webrtc.' + peerId, envelope, { headers: { "peerId": fromPeerId } } );
   }
 
   function unregPeerFromAddress ( address, peerId ) {
@@ -228,8 +218,7 @@
       sendStatusUpdate( address, peerId );
 
       // if no clients left unregister
-      if ( Object.keys(
-          registeredAddress[ address ].peerClients ).length === 0 ) {
+      if ( Object.keys( registeredAddress[ address ].peerClients ).length === 0 ) {
 
         registeredAddress[ address ].consumer.unregister();
 
@@ -239,33 +228,48 @@
 
     } else {
 
-      console.log('-=- helper -=- Error unregister attempt for non-existing client '
-        + peerId + ' on address ' + address );
+      logger.error( 'Error unregister attempt for non-existing client ' + peerId + ' on address ' + address );
+
     }
-    
+
   }
 
-  function sendStatusUpdate( address, fromPeerId ) {
+  function unregPeerFromStatusAddress ( address, peerId ) {
 
-    console.log('-=- helper -=- sendStatusUpdate',address);
-    //console.log( JSON.stringify( registeredStatusAddress ));
+    if ( registeredStatusAddress[ address ][ peerId ] ) {
+
+      delete registeredStatusAddress[ address ][ peerId ];
+
+      // if no clients left delete registeredStatusAddress
+      if ( Object.keys( registeredStatusAddress[ address ] ).length === 0 ) {
+
+        delete registeredStatusAddress[ address ];
+
+      }
+
+    } else {
+
+      logger.error( 'Error unregister status attempt for non-existing client ' + peerId + ' on address ' + address );
+
+    }
+
+  }
+
+  function sendStatusUpdate ( address, fromPeerId ) {
+
+    //logger.info( 'sendStatusUpdate ' + address );
 
     if ( registeredStatusAddress[ address ] ) {
 
       var peers = registeredStatusAddress[ address ];
 
-      Object.keys( peers ).forEach(function ( peerId ) {
+      Object.keys( peers ).forEach( function ( peerId ) {
 
-        eb.send( 'webrtc.' + peerId, {
-          status: { listenerRemoved: true },
-          address: address
-        }, {
-          headers: {}
-        } );
+        eb.send( 'webrtc.' + peerId, { status: { listenerRemoved: true }, address: address }, { headers: {} } );
 
-        console.log('-=- helper -=- sent status of ' + address + ' to ' + peerId );
+        logger.info( 'sent status of ' + address + ' to ' + peerId );
 
-      })
+      } )
 
       delete registeredStatusAddress[ address ]
 
@@ -296,25 +300,21 @@
     } )
   }
 
-  function onReply( mes1, err1, message ) {
+  function onReply ( mes1, err1, message ) {
 
     if ( err1 ) {
 
-      console.log('-=- helper -=- error', err1.message );
+      logger.error( err1.message );
 
-    } else if ( mes1.replyAddress() ){
-
-      //console.log('-=- helper -=- replyAddress:' + mes1.replyAddress() );
+    } else if ( mes1.replyAddress() ) {
 
       message.reply( mes1.body(), function ( mes2, err2 ) {
 
-        onReply( mes2, err2, mes1);
+        onReply( mes2, err2, mes1 );
 
-      })
+      } )
 
     } else {
-
-      //console.log('-=- helper -=- no replyAddress' );
 
       message.reply( mes1.body() );
     }
@@ -325,7 +325,7 @@
 
     var address = msg4client.address();
 
-    var peerId = Object.keys( registeredAddress[ address ].peerClients )[0];
+    var peerId = Object.keys( registeredAddress[ address ].peerClients )[ 0 ];
 
     var envelope = {
       address: address,
@@ -336,8 +336,8 @@
 
       onReply( replyFromInternal, error, msg4client );
 
-    })
+    } )
 
   }
-  
+
 })()
