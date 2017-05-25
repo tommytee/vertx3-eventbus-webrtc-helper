@@ -86,6 +86,8 @@
 
       registeredAddress[ msg.address ].peerClients[ msg.peerId ] = true;
 
+      statusHandlerCheck( msg.address, 'register' );
+
     } else if ( msg.unregister ) {
 
       if ( registeredAddress[ msg.address ] ) {
@@ -226,7 +228,7 @@
 
       delete registeredStatusAddress[ address ][ peerId ];
 
-      logger.info('unregister status for address ' + msg.address + ', peer: ' + msg.peerId );
+      logger.info('unregister status for address ' + address + ', peer: ' + peerId );
 
       // if no clients left delete registeredStatusAddress
 
@@ -239,6 +241,25 @@
     } else {
 
       logger.error( 'Error unregister status attempt for non-existing client ' + peerId + ' on address ' + address );
+
+    }
+
+  }
+
+  function statusHandlerCheck ( address, type ) {
+
+    if ( registeredStatusAddress[ address ] ) {
+
+      var peers = registeredStatusAddress[ address ];
+      var peArr = Object.keys( peers );
+
+      peArr.forEach( function ( peerId ) {
+
+        eb.send( 'webrtc.' + peerId, { status: { type:type, total:peArr.length }, address:address }, { headers:{} } );
+
+        logger.info( 'sent status type ' + type + ' for ' + address + ' to ' + peerId );
+
+      } )
 
     }
 
@@ -273,6 +294,7 @@
     for ( var i = 0; i < string.length; i += 16 ) {
 
       peers[ string.substr( i, 16 ) ] = true;
+
     }
 
     return peers
@@ -308,6 +330,7 @@
     } else {
 
       message.reply( mes1.body() );
+
     }
 
   }
